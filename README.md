@@ -4,6 +4,11 @@ SchoolPick helps parents choose a school that works for their child, their commu
 
 The product starts with an address, grade, preferred leaving time, max commute, and family priorities. It finds eligible public-school options and nearby private schools, checks whether each school works with the morning schedule, scores each school against the parent's priorities using cited public sources, then turns the final preference list into an actionable application plan.
 
+## Project Documents
+
+- Product spec: [hackathon/SPEC.md](hackathon/SPEC.md)
+- Implementation plan: [hackathon/PLAN.md](hackathon/PLAN.md)
+
 ## Hackathon Concept
 
 SchoolPick is designed for the Convex ALLGAS Hackathon as a consumer-oriented, full-stack app that can be demoed end to end with real public data.
