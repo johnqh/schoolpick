@@ -8,6 +8,33 @@ The product starts with an address, grade, preferred leaving time, max commute, 
 
 - Product spec: [hackathon/SPEC.md](hackathon/SPEC.md)
 - Implementation plan: [hackathon/PLAN.md](hackathon/PLAN.md)
+- Hackathon build log: [hackathon.md](hackathon.md)
+
+## Local Setup
+
+Install dependencies and start the Convex + Vite dev loop:
+
+```sh
+npm install
+npm run dev
+```
+
+The project has already been initialized with Convex AI files, the local Convex agent skills, the Convex hackathon skill, and Convex static hosting.
+
+Useful commands:
+
+```sh
+npm run lint
+npm run build
+npx convex dev --once
+```
+
+For the required public hackathon deployment path, log in to Convex and deploy to `convex.site`:
+
+```sh
+npx convex login
+npm run deploy
+```
 
 ## Hackathon Concept
 
