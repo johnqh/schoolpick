@@ -1,6 +1,14 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { api, internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import {
+  action,
+  env,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 
 const DISTRICT_NAME = "San Francisco Unified School District";
@@ -88,6 +96,34 @@ type SelectedFactor = {
   weight: number;
 };
 
+type RankedSchoolRow = {
+  school: Doc<"schools">;
+  ranking: Doc<"rankings">;
+  commute: Doc<"commuteEstimates"> | null;
+  scores: Doc<"schoolFactorScores">[];
+  sources: Doc<"schoolSources">[];
+};
+
+type TodoEmailContext = {
+  todo: Doc<"todos">;
+  application: Doc<"applications">;
+  school: Doc<"schools"> | null;
+  search: Doc<"searches">;
+};
+
+type AiScore = {
+  factorKey: string;
+  score: number;
+  confidence: string;
+  evidence: string;
+};
+
+type SendTodoEmailResult = {
+  mode: string;
+  status: string;
+  todoId: Id<"todos"> | null;
+};
+
 const seedSchools: SeedSchool[] = [
   {
     key: "clarendon",
@@ -101,7 +137,8 @@ const seedSchools: SeedSchool[] = [
     startTimeMinutes: 470,
     endTimeMinutes: 860,
     commuteMinutes: 16,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "SFUSD elementary option with a known public profile and district enrollment path.",
     scores: {
@@ -150,7 +187,8 @@ const seedSchools: SeedSchool[] = [
     startTimeMinutes: 465,
     endTimeMinutes: 855,
     commuteMinutes: 11,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "SFUSD elementary option with a Chinese immersion pathway and central district application.",
     scores: {
@@ -193,13 +231,13 @@ const seedSchools: SeedSchool[] = [
     districtName: DISTRICT_NAME,
     address: "1541 12th Ave, San Francisco, CA",
     gradesServed: ["K", "1", "2", "3", "4", "5", "6", "7", "8"],
-    websiteUrl:
-      "https://www.sfusd.edu/school/alice-fong-yu-alternative-school",
+    websiteUrl: "https://www.sfusd.edu/school/alice-fong-yu-alternative-school",
     admissionsUrl: "https://www.sfusd.edu/schools/enroll",
     startTimeMinutes: 475,
     endTimeMinutes: 880,
     commuteMinutes: 8,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "K-8 SFUSD alternative school with Chinese language pathway and a district enrollment path.",
     scores: {
@@ -247,7 +285,8 @@ const seedSchools: SeedSchool[] = [
     startTimeMinutes: 480,
     endTimeMinutes: 890,
     commuteMinutes: 18,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "K-8 SFUSD alternative school in the Sunset with district enrollment.",
     scores: {
@@ -295,7 +334,8 @@ const seedSchools: SeedSchool[] = [
     startTimeMinutes: 500,
     endTimeMinutes: 910,
     commuteMinutes: 12,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "SFUSD middle school option with a central enrollment process and west-side commute profile.",
     scores: {
@@ -343,7 +383,8 @@ const seedSchools: SeedSchool[] = [
     startTimeMinutes: 495,
     endTimeMinutes: 905,
     commuteMinutes: 19,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "SFUSD middle school option near the Richmond and Presidio areas.",
     scores: {
@@ -535,7 +576,8 @@ const seedSchools: SeedSchool[] = [
     startTimeMinutes: 500,
     endTimeMinutes: 930,
     commuteMinutes: 17,
-    sourceNote: "Seeded from planned SFUSD public sources for demo reliability.",
+    sourceNote:
+      "Seeded from planned SFUSD public sources for demo reliability.",
     sourceSummary:
       "SFUSD high school option with a central enrollment path and broad course offerings.",
     scores: {
@@ -698,6 +740,39 @@ export const listTimeline = query({
       .order("desc")
       .take(50);
     return events.reverse();
+  },
+});
+
+export const getIntegrationStatus = query({
+  args: {},
+  handler: async () => {
+    return {
+      firecrawlConfigured: Boolean(env.FIRECRAWL_API_KEY),
+      openaiConfigured: Boolean(env.OPENAI_API_KEY),
+      openaiModel: env.OPENAI_MODEL ?? "gpt-4o-mini",
+      agentMailConfigured: Boolean(
+        env.AGENTMAIL_API_KEY &&
+          env.AGENTMAIL_INBOX_ID &&
+          env.SCHOOLPICK_DEMO_RECIPIENT,
+      ),
+      agentMailInboxConfigured: Boolean(env.AGENTMAIL_INBOX_ID),
+      demoRecipientConfigured: Boolean(env.SCHOOLPICK_DEMO_RECIPIENT),
+      webhookPath: "/api/agentmail/webhook",
+    };
+  },
+});
+
+export const listIntegrationRuns = query({
+  args: { searchId: v.id("searches") },
+  handler: async (ctx, args) => {
+    const runs = await ctx.db
+      .query("integrationRuns")
+      .withIndex("by_searchId_and_createdAt", (q) =>
+        q.eq("searchId", args.searchId),
+      )
+      .order("desc")
+      .take(8);
+    return runs;
   },
 });
 
@@ -943,6 +1018,622 @@ export const createApplicationPlan = mutation({
   },
 });
 
+export const refreshSchoolSources = action({
+  args: {
+    searchId: v.id("searches"),
+    schoolId: v.optional(v.id("schools")),
+  },
+  handler: async (ctx, args) => {
+    const rows: RankedSchoolRow[] = await ctx.runQuery(
+      api.schoolpick.listRankedSchools,
+      { searchId: args.searchId },
+    );
+    const targets = selectIntegrationSchools(rows, args.schoolId, 3);
+
+    if (!env.FIRECRAWL_API_KEY) {
+      await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+        searchId: args.searchId,
+        provider: "firecrawl",
+        operation: "refresh_sources",
+        mode: "demo",
+        status: "fallback",
+        detail:
+          "FIRECRAWL_API_KEY is not configured, so SchoolPick kept the cached demo school sources.",
+        timelineTitle: "Source refresh used demo cache",
+        timelineBody:
+          "Set FIRECRAWL_API_KEY in Convex to scrape school pages live during the demo.",
+      });
+      return { mode: "demo", status: "fallback", refreshed: 0 };
+    }
+
+    let refreshed = 0;
+    for (const row of targets) {
+      try {
+        const scrape = await scrapeWithFirecrawl(
+          env.FIRECRAWL_API_KEY,
+          row.school.websiteUrl,
+        );
+        const summary =
+          scrape.summary ??
+          summarizeText(scrape.markdown ?? "", `${row.school.name} source`);
+        await ctx.runMutation(internal.schoolpick.recordScrapedSource, {
+          searchId: args.searchId,
+          schoolId: row.school._id,
+          title: scrape.title ?? `${row.school.name} website scrape`,
+          url: scrape.sourceUrl ?? row.school.websiteUrl,
+          kind: "school_site",
+          summary,
+          rawExcerpt: excerpt(scrape.markdown ?? scrape.summary ?? "", 2800),
+          provider: "firecrawl",
+          status: "live_scraped",
+        });
+        refreshed += 1;
+      } catch (error) {
+        await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+          searchId: args.searchId,
+          schoolId: row.school._id,
+          provider: "firecrawl",
+          operation: "refresh_sources",
+          mode: "live",
+          status: "failed",
+          detail: errorToString(error),
+        });
+      }
+    }
+
+    await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+      searchId: args.searchId,
+      provider: "firecrawl",
+      operation: "refresh_sources",
+      mode: "live",
+      status: refreshed > 0 ? "succeeded" : "failed",
+      detail: `${refreshed} of ${targets.length} school pages were refreshed from Firecrawl.`,
+      timelineTitle: "School sources refreshed",
+      timelineBody: `${refreshed} school websites were scraped and attached to the ranking evidence.`,
+    });
+
+    return {
+      mode: "live",
+      status: refreshed > 0 ? "succeeded" : "failed",
+      refreshed,
+    };
+  },
+});
+
+export const rescoreWithOpenAI = action({
+  args: { searchId: v.id("searches") },
+  handler: async (ctx, args) => {
+    const search: Doc<"searches"> | null = await ctx.runQuery(
+      api.schoolpick.getSearch,
+      { searchId: args.searchId },
+    );
+    const rows: RankedSchoolRow[] = await ctx.runQuery(
+      api.schoolpick.listRankedSchools,
+      { searchId: args.searchId },
+    );
+    const targets = selectIntegrationSchools(rows, undefined, 5);
+
+    if (!search) {
+      return { mode: "demo", status: "missing_search", rescored: 0 };
+    }
+
+    if (!env.OPENAI_API_KEY) {
+      await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+        searchId: args.searchId,
+        provider: "openai",
+        operation: "rescore_schools",
+        mode: "demo",
+        status: "fallback",
+        detail:
+          "OPENAI_API_KEY is not configured, so SchoolPick kept seeded scores while preserving the end-to-end demo.",
+        timelineTitle: "AI rescore used seeded evidence",
+        timelineBody:
+          "Set OPENAI_API_KEY in Convex to rescore schools from scraped source summaries.",
+      });
+      return { mode: "demo", status: "fallback", rescored: 0 };
+    }
+
+    const model = env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const results: Array<{
+      schoolId: Id<"schools">;
+      summary: string;
+      concerns: string[];
+      scores: AiScore[];
+    }> = [];
+
+    for (const row of targets) {
+      try {
+        const result = await scoreSchoolWithOpenAI(
+          env.OPENAI_API_KEY,
+          model,
+          search,
+          row,
+        );
+        results.push({
+          schoolId: row.school._id,
+          summary: result.summary,
+          concerns: result.concerns,
+          scores: result.scores,
+        });
+      } catch (error) {
+        await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+          searchId: args.searchId,
+          schoolId: row.school._id,
+          provider: "openai",
+          operation: "rescore_schools",
+          mode: "live",
+          status: "failed",
+          detail: errorToString(error),
+        });
+      }
+    }
+
+    if (results.length > 0) {
+      await ctx.runMutation(internal.schoolpick.recordAiRescore, {
+        searchId: args.searchId,
+        model,
+        results,
+      });
+    }
+
+    await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+      searchId: args.searchId,
+      provider: "openai",
+      operation: "rescore_schools",
+      mode: "live",
+      status: results.length > 0 ? "succeeded" : "failed",
+      detail: `${results.length} of ${targets.length} shortlisted schools were rescored with ${model}.`,
+      timelineTitle: "School fit scores refreshed",
+      timelineBody:
+        results.length > 0
+          ? `${results.length} schools were rescored from current source evidence.`
+          : "No schools were rescored because every OpenAI request failed.",
+    });
+
+    return {
+      mode: "live",
+      status: results.length > 0 ? "succeeded" : "failed",
+      rescored: results.length,
+    };
+  },
+});
+
+export const sendTodoEmail = action({
+  args: { todoId: v.id("todos") },
+  handler: async (ctx, args): Promise<SendTodoEmailResult> => {
+    const context: TodoEmailContext | null = await ctx.runQuery(
+      internal.schoolpick.getTodoEmailContext,
+      { todoId: args.todoId },
+    );
+    if (!context) {
+      return { mode: "demo", status: "missing_todo", todoId: null };
+    }
+
+    if (
+      !env.AGENTMAIL_API_KEY ||
+      !env.AGENTMAIL_INBOX_ID ||
+      !env.SCHOOLPICK_DEMO_RECIPIENT
+    ) {
+      await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+        searchId: context.search._id,
+        todoId: args.todoId,
+        provider: "agentmail",
+        operation: "send_todo_email",
+        mode: "demo",
+        status: "fallback",
+        detail:
+          "AgentMail is not fully configured, so SchoolPick used the demo send and reply loop.",
+      });
+      const todoId: Id<"todos"> | null = await ctx.runMutation(
+        api.schoolpick.sendDraftEmail,
+        { todoId: args.todoId },
+      );
+      return { mode: "demo", status: "fallback", todoId };
+    }
+
+    const payload = buildEmailPayload(context, env.SCHOOLPICK_DEMO_RECIPIENT);
+    try {
+      const sent = await sendWithAgentMail(
+        env.AGENTMAIL_API_KEY,
+        env.AGENTMAIL_INBOX_ID,
+        {
+          ...payload,
+          labels: [
+            "schoolpick",
+            `search_${context.search._id}`,
+            `todo_${context.todo._id}`,
+          ],
+          headers: {
+            "X-SchoolPick-Search-Id": context.search._id,
+            "X-SchoolPick-Todo-Id": context.todo._id,
+          },
+        },
+      );
+      const todoId: Id<"todos"> | null = await ctx.runMutation(
+        internal.schoolpick.recordLiveEmailSent,
+        {
+          todoId: args.todoId,
+          recipient: payload.to,
+          subject: payload.subject,
+          body: payload.text,
+          providerMessageId: sent.messageId,
+          providerThreadId: sent.threadId,
+        },
+      );
+      await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+        searchId: context.search._id,
+        todoId: args.todoId,
+        provider: "agentmail",
+        operation: "send_todo_email",
+        mode: "live",
+        status: "succeeded",
+        detail: `AgentMail accepted message ${sent.messageId} on thread ${sent.threadId}.`,
+      });
+      return { mode: "live", status: "succeeded", todoId };
+    } catch (error) {
+      await ctx.runMutation(internal.schoolpick.recordIntegrationRun, {
+        searchId: context.search._id,
+        todoId: args.todoId,
+        provider: "agentmail",
+        operation: "send_todo_email",
+        mode: "live",
+        status: "failed",
+        detail: errorToString(error),
+      });
+      const todoId: Id<"todos"> | null = await ctx.runMutation(
+        api.schoolpick.sendDraftEmail,
+        { todoId: args.todoId },
+      );
+      return { mode: "demo", status: "live_failed_fallback", todoId };
+    }
+  },
+});
+
+export const getTodoEmailContext = internalQuery({
+  args: { todoId: v.id("todos") },
+  handler: async (ctx, args) => {
+    const todo = await ctx.db.get(args.todoId);
+    if (!todo) {
+      return null;
+    }
+    const application = await ctx.db.get(todo.applicationId);
+    const search = await ctx.db.get(todo.searchId);
+    if (!application || !search) {
+      return null;
+    }
+    const school = todo.schoolId ? await ctx.db.get(todo.schoolId) : null;
+    return { todo, application, search, school };
+  },
+});
+
+export const recordIntegrationRun = internalMutation({
+  args: {
+    searchId: v.id("searches"),
+    schoolId: v.optional(v.id("schools")),
+    todoId: v.optional(v.id("todos")),
+    provider: v.string(),
+    operation: v.string(),
+    mode: v.string(),
+    status: v.string(),
+    detail: v.string(),
+    timelineTitle: v.optional(v.string()),
+    timelineBody: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("integrationRuns", {
+      searchId: args.searchId,
+      schoolId: args.schoolId,
+      todoId: args.todoId,
+      provider: args.provider,
+      operation: args.operation,
+      mode: args.mode,
+      status: args.status,
+      detail: args.detail,
+      createdAt: Date.now(),
+    });
+    if (args.timelineTitle && args.timelineBody) {
+      await addTimeline(
+        ctx,
+        args.searchId,
+        "integration",
+        args.timelineTitle,
+        args.timelineBody,
+      );
+    }
+    return null;
+  },
+});
+
+export const recordScrapedSource = internalMutation({
+  args: {
+    searchId: v.id("searches"),
+    schoolId: v.id("schools"),
+    title: v.string(),
+    url: v.string(),
+    kind: v.string(),
+    summary: v.string(),
+    rawExcerpt: v.string(),
+    provider: v.string(),
+    status: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("schoolSources")
+      .withIndex("by_searchId_and_schoolId", (q) =>
+        q.eq("searchId", args.searchId).eq("schoolId", args.schoolId),
+      )
+      .take(20);
+    const match = existing.find(
+      (source) => source.url === args.url && source.provider === args.provider,
+    );
+    if (match) {
+      await ctx.db.patch(match._id, {
+        title: args.title,
+        kind: args.kind,
+        summary: args.summary,
+        rawExcerpt: args.rawExcerpt,
+        status: args.status,
+        updatedAt: now,
+      });
+      return match._id;
+    }
+    return await ctx.db.insert("schoolSources", {
+      searchId: args.searchId,
+      schoolId: args.schoolId,
+      title: args.title,
+      url: args.url,
+      kind: args.kind,
+      summary: args.summary,
+      rawExcerpt: args.rawExcerpt,
+      provider: args.provider,
+      status: args.status,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const recordAiRescore = internalMutation({
+  args: {
+    searchId: v.id("searches"),
+    model: v.string(),
+    results: v.array(
+      v.object({
+        schoolId: v.id("schools"),
+        summary: v.string(),
+        concerns: v.array(v.string()),
+        scores: v.array(
+          v.object({
+            factorKey: v.string(),
+            score: v.number(),
+            confidence: v.string(),
+            evidence: v.string(),
+          }),
+        ),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const search = await ctx.db.get(args.searchId);
+    if (!search) {
+      return null;
+    }
+    const now = Date.now();
+    for (const result of args.results) {
+      for (const score of result.scores) {
+        const existing = await ctx.db
+          .query("schoolFactorScores")
+          .withIndex("by_searchId_and_schoolId_and_factorKey", (q) =>
+            q
+              .eq("searchId", args.searchId)
+              .eq("schoolId", result.schoolId)
+              .eq("factorKey", score.factorKey),
+          )
+          .unique();
+        const fields = {
+          score: clampScore(score.score),
+          confidence: normalizeConfidence(score.confidence),
+          evidence: score.evidence,
+          sourceUrl: `openai://responses/${args.model}`,
+          createdAt: now,
+        };
+        if (existing) {
+          await ctx.db.patch(existing._id, fields);
+        } else {
+          await ctx.db.insert("schoolFactorScores", {
+            searchId: args.searchId,
+            schoolId: result.schoolId,
+            factorKey: score.factorKey,
+            ...fields,
+          });
+        }
+      }
+      await ctx.db.insert("artifacts", {
+        searchId: args.searchId,
+        title: `AI school-fit review`,
+        body: [
+          result.summary,
+          result.concerns.length > 0
+            ? `Watchouts: ${result.concerns.join("; ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        kind: "ai_rescore",
+        createdAt: now,
+      });
+    }
+
+    const rankings = await ctx.db
+      .query("rankings")
+      .withIndex("by_searchId", (q) => q.eq("searchId", args.searchId))
+      .take(50);
+    const rescoredIds = new Set(args.results.map((result) => result.schoolId));
+    for (const ranking of rankings) {
+      if (!rescoredIds.has(ranking.schoolId)) {
+        continue;
+      }
+      const scores = await ctx.db
+        .query("schoolFactorScores")
+        .withIndex("by_searchId_and_schoolId", (q) =>
+          q.eq("searchId", args.searchId).eq("schoolId", ranking.schoolId),
+        )
+        .take(50);
+      await ctx.db.patch(ranking._id, {
+        weightedScore: calculateWeightedScoreFromDocs(
+          search.selectedFactors,
+          scores,
+        ),
+        updatedAt: now,
+      });
+    }
+
+    const refreshedRankings = await ctx.db
+      .query("rankings")
+      .withIndex("by_searchId", (q) => q.eq("searchId", args.searchId))
+      .take(50);
+    const aiOrdered = refreshedRankings
+      .slice()
+      .sort((a, b) => b.weightedScore - a.weightedScore);
+    for (let index = 0; index < aiOrdered.length; index += 1) {
+      await ctx.db.patch(aiOrdered[index]._id, {
+        aiRank: index + 1,
+        updatedAt: now,
+      });
+    }
+
+    return null;
+  },
+});
+
+export const recordLiveEmailSent = internalMutation({
+  args: {
+    todoId: v.id("todos"),
+    recipient: v.string(),
+    subject: v.string(),
+    body: v.string(),
+    providerMessageId: v.string(),
+    providerThreadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const todo = await ctx.db.get(args.todoId);
+    if (!todo) {
+      return null;
+    }
+    await ctx.db.insert("communications", {
+      searchId: todo.searchId,
+      applicationId: todo.applicationId,
+      schoolId: todo.schoolId,
+      todoId: todo._id,
+      direction: "outbound",
+      from: "SchoolPick AgentMail inbox",
+      to: args.recipient,
+      subject: args.subject,
+      body: args.body,
+      summary: "Live outbound message accepted by AgentMail.",
+      source: "AgentMail live send",
+      providerMessageId: args.providerMessageId,
+      providerThreadId: args.providerThreadId,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(todo._id, {
+      status: "waiting_for_reply",
+      resultTitle: "Email sent",
+      resultBody:
+        "AgentMail accepted the message. SchoolPick will attach the reply when the webhook receives it.",
+      updatedAt: Date.now(),
+    });
+    await addTimeline(
+      ctx,
+      todo.searchId,
+      "email",
+      "Live email sent",
+      `${args.subject} was sent through AgentMail and is waiting for a reply.`,
+    );
+    return todo._id;
+  },
+});
+
+export const recordInboundAgentMailMessage = internalMutation({
+  args: {
+    providerMessageId: v.string(),
+    providerThreadId: v.string(),
+    eventId: v.optional(v.string()),
+    from: v.string(),
+    to: v.string(),
+    subject: v.string(),
+    body: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const threadMessages = await ctx.db
+      .query("communications")
+      .withIndex("by_providerThreadId", (q) =>
+        q.eq("providerThreadId", args.providerThreadId),
+      )
+      .take(20);
+    const duplicate = threadMessages.find(
+      (message) => message.eventId && message.eventId === args.eventId,
+    );
+    if (duplicate) {
+      return { matched: true, duplicate: true };
+    }
+    const base =
+      threadMessages.find((message) => message.direction === "outbound") ??
+      threadMessages[0];
+    if (!base) {
+      return { matched: false, duplicate: false };
+    }
+
+    const now = Date.now();
+    const summary = summarizeText(args.body, "Admissions reply received");
+    await ctx.db.insert("communications", {
+      searchId: base.searchId,
+      applicationId: base.applicationId,
+      schoolId: base.schoolId,
+      todoId: base.todoId,
+      direction: "inbound",
+      from: args.from,
+      to: args.to,
+      subject: args.subject,
+      body: args.body,
+      summary,
+      source: "AgentMail webhook",
+      providerMessageId: args.providerMessageId,
+      providerThreadId: args.providerThreadId,
+      eventId: args.eventId,
+      createdAt: now,
+    });
+
+    if (base.todoId) {
+      await ctx.db.patch(base.todoId, {
+        status: "done",
+        resultTitle: "Reply received",
+        resultBody: summary,
+        updatedAt: now,
+      });
+      await insertTodo(ctx, {
+        searchId: base.searchId,
+        applicationId: base.applicationId,
+        schoolId: base.schoolId,
+        title: "Review admissions reply",
+        actionType: "summarize_reply",
+        dueLabel: "Next",
+        sourceLinks: [],
+      });
+    }
+
+    await addTimeline(
+      ctx,
+      base.searchId,
+      "email",
+      "AgentMail reply received",
+      summary,
+    );
+    return { matched: true, duplicate: false };
+  },
+});
+
 export const runTodoAction = mutation({
   args: { todoId: v.id("todos") },
   handler: async (ctx, args) => {
@@ -1016,10 +1707,12 @@ export const sendDraftEmail = mutation({
     const body =
       todo.resultBody ??
       `Hello, I am comparing schools for my child and have questions about ${application.title}.`;
+    const demoThreadId = `demo-thread-${todo._id}`;
     await ctx.db.insert("communications", {
       searchId: todo.searchId,
       applicationId: todo.applicationId,
       schoolId: todo.schoolId,
+      todoId: todo._id,
       direction: "outbound",
       from: "parent-demo@schoolpick.local",
       to: recipient,
@@ -1027,12 +1720,15 @@ export const sendDraftEmail = mutation({
       body,
       summary: "Demo outbound message generated from a SchoolPick todo.",
       source: "AgentMail demo send",
+      providerMessageId: `demo-outbound-${todo._id}`,
+      providerThreadId: demoThreadId,
       createdAt: now,
     });
     await ctx.db.insert("communications", {
       searchId: todo.searchId,
       applicationId: todo.applicationId,
       schoolId: todo.schoolId,
+      todoId: todo._id,
       direction: "inbound",
       from: recipient,
       to: "parent-demo@schoolpick.local",
@@ -1046,6 +1742,9 @@ export const sendDraftEmail = mutation({
           ? "Enrollment office reply confirms ranked-choice order and core documents."
           : "Admissions reply confirms tour request and school-specific checklist steps.",
       source: "AgentMail demo reply",
+      providerMessageId: `demo-inbound-${todo._id}`,
+      providerThreadId: demoThreadId,
+      eventId: `demo-event-${todo._id}`,
       createdAt: now + 1,
     });
     await ctx.db.patch(todo._id, {
@@ -1142,7 +1841,9 @@ async function createSearchFromSeed(
       title: `${seedSchool.name} public profile`,
       url: seedSchool.websiteUrl,
       kind:
-        seedSchool.schoolType === "Private" ? "school_site" : "district_profile",
+        seedSchool.schoolType === "Private"
+          ? "school_site"
+          : "district_profile",
       summary: seedSchool.sourceSummary,
       status: "cached_demo_source",
       createdAt: now,
@@ -1323,8 +2024,44 @@ function calculateWeightedScore(
   return roundScore(weightedTotal / totalWeight);
 }
 
+function calculateWeightedScoreFromDocs(
+  selectedFactors: SelectedFactor[],
+  scores: Doc<"schoolFactorScores">[],
+) {
+  const totalWeight = selectedFactors.reduce(
+    (sum, factor) => sum + factor.weight,
+    0,
+  );
+  if (totalWeight === 0) {
+    return 0;
+  }
+  const scoreByFactor = new Map(
+    scores.map((score) => [score.factorKey, score.score]),
+  );
+  const weightedTotal = selectedFactors.reduce((sum, factor) => {
+    return sum + (scoreByFactor.get(factor.key) ?? 2.5) * factor.weight;
+  }, 0);
+  return roundScore(weightedTotal / totalWeight);
+}
+
 function roundScore(score: number) {
   return Math.round(score * 10) / 10;
+}
+
+function clampScore(score: number) {
+  return roundScore(Math.min(5, Math.max(1, score)));
+}
+
+function normalizeConfidence(confidence: string) {
+  const normalized = confidence.trim().toLowerCase();
+  if (
+    normalized === "high" ||
+    normalized === "medium" ||
+    normalized === "low"
+  ) {
+    return normalized;
+  }
+  return "medium";
 }
 
 async function addTimeline(
@@ -1469,4 +2206,367 @@ async function buildTodoResult(
     title: "Action completed",
     body: `SchoolPick completed ${actionType} for ${context.schoolName}.`,
   };
+}
+
+function selectIntegrationSchools(
+  rows: RankedSchoolRow[],
+  schoolId: Id<"schools"> | undefined,
+  limit: number,
+) {
+  const ordered = rows.slice().sort((a, b) => {
+    if (a.ranking.parentRank !== b.ranking.parentRank) {
+      return a.ranking.parentRank - b.ranking.parentRank;
+    }
+    return a.ranking.aiRank - b.ranking.aiRank;
+  });
+  const selected = schoolId
+    ? ordered.filter((row) => row.school._id === schoolId)
+    : ordered.filter((row) => row.ranking.shortlisted);
+  return (selected.length > 0 ? selected : ordered).slice(0, limit);
+}
+
+async function scrapeWithFirecrawl(apiKey: string, url: string) {
+  const response = await fetch("https://api.firecrawl.dev/v2/scrape", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url,
+      formats: ["markdown"],
+      onlyMainContent: true,
+      timeout: 30000,
+      removeBase64Images: true,
+      blockAds: true,
+    }),
+  });
+  const json = await readJson(response);
+  if (!response.ok) {
+    throw new Error(
+      `Firecrawl scrape failed with ${response.status}: ${summarizeErrorPayload(
+        json,
+      )}`,
+    );
+  }
+  const root = asRecord(json);
+  if (!root) {
+    throw new Error("Firecrawl returned a non-object response.");
+  }
+  const data = asRecord(root.data);
+  if (!data) {
+    throw new Error("Firecrawl response did not include a data object.");
+  }
+  const metadata = asRecord(data.metadata);
+  return {
+    markdown: asString(data.markdown),
+    summary: asString(data.summary),
+    title: asString(metadata?.title),
+    sourceUrl: asString(metadata?.sourceURL) ?? asString(metadata?.url) ?? url,
+  };
+}
+
+async function scoreSchoolWithOpenAI(
+  apiKey: string,
+  model: string,
+  search: Doc<"searches">,
+  row: RankedSchoolRow,
+) {
+  const selectedKeys = search.selectedFactors.map((factor) => factor.key);
+  const input = {
+    family: {
+      address: search.address,
+      grade: search.grade,
+      preferredLeaveTime: search.preferredLeaveTimeMinutes,
+      maxCommuteMinutes: search.maxCommuteMinutes,
+      dropoffBufferMinutes: search.dropoffBufferMinutes,
+      selectedFactors: search.selectedFactors,
+    },
+    school: {
+      name: row.school.name,
+      type: row.school.schoolType,
+      districtName: row.school.districtName,
+      address: row.school.address,
+      gradesServed: row.school.gradesServed,
+      startTimeMinutes: row.school.startTimeMinutes,
+      endTimeMinutes: row.school.endTimeMinutes,
+      commute: row.commute,
+    },
+    currentScores: row.scores.map((score) => ({
+      factorKey: score.factorKey,
+      score: score.score,
+      confidence: score.confidence,
+      evidence: score.evidence,
+    })),
+    sourceEvidence: row.sources.map((source) => ({
+      title: source.title,
+      url: source.url,
+      summary: source.summary,
+      excerpt: excerpt(source.rawExcerpt ?? source.summary, 900),
+    })),
+  };
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      instructions:
+        "You help parents compare schools. Score only the requested factors from the provided evidence. Use 1 to 5 scores, cite concrete evidence, and avoid inventing facts.",
+      input: JSON.stringify(input, null, 2),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "schoolpick_school_rescore",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              summary: { type: "string" },
+              concerns: {
+                type: "array",
+                items: { type: "string" },
+              },
+              factorScores: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    factorKey: { type: "string" },
+                    score: { type: "number" },
+                    confidence: { type: "string" },
+                    evidence: { type: "string" },
+                  },
+                  required: ["factorKey", "score", "confidence", "evidence"],
+                },
+              },
+            },
+            required: ["summary", "concerns", "factorScores"],
+          },
+        },
+      },
+      max_output_tokens: 900,
+    }),
+  });
+  const json = await readJson(response);
+  if (!response.ok) {
+    throw new Error(
+      `OpenAI response failed with ${response.status}: ${summarizeErrorPayload(
+        json,
+      )}`,
+    );
+  }
+  const outputText = extractResponseText(json);
+  if (!outputText) {
+    throw new Error("OpenAI response did not include output text.");
+  }
+  return parseAiScoringPayload(outputText, selectedKeys);
+}
+
+async function sendWithAgentMail(
+  apiKey: string,
+  inboxId: string,
+  payload: {
+    to: string;
+    subject: string;
+    text: string;
+    labels: string[];
+    headers: Record<string, string>;
+  },
+) {
+  const response = await fetch(
+    `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(
+      inboxId,
+    )}/messages/send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  const json = await readJson(response);
+  if (!response.ok) {
+    throw new Error(
+      `AgentMail send failed with ${response.status}: ${summarizeErrorPayload(
+        json,
+      )}`,
+    );
+  }
+  const root = asRecord(json);
+  const messageId = asString(root?.message_id);
+  const threadId = asString(root?.thread_id);
+  if (!messageId || !threadId) {
+    throw new Error("AgentMail response did not include message_id/thread_id.");
+  }
+  return { messageId, threadId };
+}
+
+function buildEmailPayload(context: TodoEmailContext, recipient: string) {
+  const schoolName = context.school?.name ?? "SFUSD schools";
+  const subject =
+    context.application.track === "public"
+      ? "Questions about SFUSD application fit"
+      : `Tour and admissions questions for ${schoolName}`;
+  return {
+    to: recipient,
+    subject,
+    text:
+      context.todo.resultBody ??
+      [
+        "Hello,",
+        "",
+        `I am comparing ${context.application.title} for my child and would like to confirm the next steps.`,
+        "",
+        "Could you confirm grade eligibility, key deadlines, required documents, tour or information-session options, and anything families often miss?",
+        "",
+        "Thank you.",
+      ].join("\n"),
+  };
+}
+
+function parseAiScoringPayload(outputText: string, selectedKeys: string[]) {
+  const parsed: unknown = JSON.parse(outputText);
+  const root = asRecord(parsed);
+  if (!root) {
+    throw new Error("OpenAI returned JSON that was not an object.");
+  }
+  const allowedKeys = new Set(selectedKeys);
+  const scores: AiScore[] = asArray(root.factorScores)
+    .map((item) => {
+      const score = asRecord(item);
+      if (!score) {
+        return null;
+      }
+      const factorKey = asString(score.factorKey) ?? asString(score.factor_key);
+      const numericScore = asNumber(score.score);
+      const confidence = asString(score.confidence);
+      const evidence = asString(score.evidence);
+      if (
+        !factorKey ||
+        numericScore === null ||
+        !confidence ||
+        !evidence ||
+        !allowedKeys.has(factorKey)
+      ) {
+        return null;
+      }
+      return {
+        factorKey,
+        score: clampScore(numericScore),
+        confidence: normalizeConfidence(confidence),
+        evidence,
+      };
+    })
+    .filter((score): score is AiScore => score !== null);
+
+  if (scores.length === 0) {
+    throw new Error("OpenAI returned no usable factor scores.");
+  }
+
+  return {
+    summary: asString(root.summary) ?? "AI score refresh completed.",
+    concerns: asStringArray(root.concerns).slice(0, 5),
+    scores,
+  };
+}
+
+function extractResponseText(value: unknown) {
+  const root = asRecord(value);
+  const direct = asString(root?.output_text);
+  if (direct) {
+    return direct;
+  }
+  for (const item of asArray(root?.output)) {
+    const itemRecord = asRecord(item);
+    for (const content of asArray(itemRecord?.content)) {
+      const contentRecord = asRecord(content);
+      const text = asString(contentRecord?.text);
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return null;
+}
+
+async function readJson(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function asNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asStringArray(value: unknown) {
+  return asArray(value).filter(
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
+  );
+}
+
+function summarizeErrorPayload(value: unknown) {
+  if (typeof value === "string") {
+    return excerpt(value, 240);
+  }
+  const record = asRecord(value);
+  return excerpt(
+    asString(record?.error) ??
+      asString(record?.message) ??
+      JSON.stringify(value).slice(0, 500),
+    240,
+  );
+}
+
+function summarizeText(value: string, fallback: string) {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return fallback;
+  }
+  return excerpt(cleaned, 260);
+}
+
+function excerpt(value: string, maxLength: number) {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+  return `${cleaned.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function errorToString(error: unknown) {
+  if (error instanceof Error) {
+    return excerpt(error.message, 400);
+  }
+  return excerpt(String(error), 400);
 }

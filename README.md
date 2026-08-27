@@ -29,6 +29,24 @@ npm run build
 npx convex dev --once
 ```
 
+Optional live integrations are configured as Convex environment variables. If
+they are unset, SchoolPick records an explicit demo-mode provider run and keeps
+the end-to-end flow working:
+
+```sh
+npx convex env set FIRECRAWL_API_KEY fc-your-key
+npx convex env set OPENAI_API_KEY sk-your-key
+npx convex env set OPENAI_MODEL gpt-4o-mini
+npx convex env set AGENTMAIL_API_KEY your-agentmail-key
+npx convex env set AGENTMAIL_INBOX_ID your-inbox-id
+npx convex env set SCHOOLPICK_DEMO_RECIPIENT judge-or-test@example.com
+npx convex env set AGENTMAIL_WEBHOOK_SECRET shared-webhook-secret
+```
+
+AgentMail replies should post `message.received` events to
+`/api/agentmail/webhook`. When `AGENTMAIL_WEBHOOK_SECRET` is set, configure
+AgentMail to send the same value in the `x-schoolpick-webhook-secret` header.
+
 For the required public hackathon deployment path, log in to Convex and deploy to `convex.site`:
 
 ```sh

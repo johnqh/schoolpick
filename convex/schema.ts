@@ -51,7 +51,10 @@ export default defineSchema({
     kind: v.string(),
     summary: v.string(),
     status: v.string(),
+    rawExcerpt: v.optional(v.string()),
+    provider: v.optional(v.string()),
     createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
   })
     .index("by_searchId", ["searchId"])
     .index("by_schoolId", ["schoolId"])
@@ -134,6 +137,7 @@ export default defineSchema({
     searchId: v.id("searches"),
     applicationId: v.id("applications"),
     schoolId: v.optional(v.id("schools")),
+    todoId: v.optional(v.id("todos")),
     direction: v.string(),
     from: v.string(),
     to: v.string(),
@@ -141,10 +145,28 @@ export default defineSchema({
     body: v.string(),
     summary: v.optional(v.string()),
     source: v.string(),
+    providerMessageId: v.optional(v.string()),
+    providerThreadId: v.optional(v.string()),
+    eventId: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_searchId", ["searchId"])
     .index("by_applicationId", ["applicationId"])
+    .index("by_searchId_and_createdAt", ["searchId", "createdAt"])
+    .index("by_providerThreadId", ["providerThreadId"]),
+
+  integrationRuns: defineTable({
+    searchId: v.id("searches"),
+    schoolId: v.optional(v.id("schools")),
+    todoId: v.optional(v.id("todos")),
+    provider: v.string(),
+    operation: v.string(),
+    mode: v.string(),
+    status: v.string(),
+    detail: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_searchId", ["searchId"])
     .index("by_searchId_and_createdAt", ["searchId", "createdAt"]),
 
   timelineEvents: defineTable({

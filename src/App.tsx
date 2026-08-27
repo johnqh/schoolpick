@@ -8,7 +8,7 @@ import {
   PlusIcon,
   ReloadIcon,
 } from "@radix-ui/react-icons";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { FormEvent, useMemo, useState } from "react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -39,9 +39,13 @@ export default function App() {
   const startDemoSearch = useMutation(api.schoolpick.startDemoSearch);
   const toggleShortlist = useMutation(api.schoolpick.toggleShortlist);
   const moveRanking = useMutation(api.schoolpick.moveRanking);
-  const createApplicationPlan = useMutation(api.schoolpick.createApplicationPlan);
+  const createApplicationPlan = useMutation(
+    api.schoolpick.createApplicationPlan,
+  );
   const runTodoAction = useMutation(api.schoolpick.runTodoAction);
-  const sendDraftEmail = useMutation(api.schoolpick.sendDraftEmail);
+  const refreshSchoolSources = useAction(api.schoolpick.refreshSchoolSources);
+  const rescoreWithOpenAI = useAction(api.schoolpick.rescoreWithOpenAI);
+  const sendTodoEmail = useAction(api.schoolpick.sendTodoEmail);
 
   const [activeSearchId, setActiveSearchId] = useState<Id<"searches"> | null>(
     null,
@@ -71,6 +75,11 @@ export default function App() {
   );
   const timeline = useQuery(
     api.schoolpick.listTimeline,
+    searchId ? { searchId } : "skip",
+  );
+  const integrationStatus = useQuery(api.schoolpick.getIntegrationStatus);
+  const integrationRuns = useQuery(
+    api.schoolpick.listIntegrationRuns,
     searchId ? { searchId } : "skip",
   );
 
@@ -137,6 +146,30 @@ export default function App() {
     setBusyLabel("Creating application plan");
     try {
       await createApplicationPlan({ searchId });
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function handleRefreshSources() {
+    if (!searchId) {
+      return;
+    }
+    setBusyLabel("Refreshing sources");
+    try {
+      await refreshSchoolSources({ searchId });
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
+  async function handleRescore() {
+    if (!searchId) {
+      return;
+    }
+    setBusyLabel("Rescoring schools");
+    try {
+      await rescoreWithOpenAI({ searchId });
     } finally {
       setBusyLabel(null);
     }
@@ -245,7 +278,9 @@ export default function App() {
                   min={5}
                   max={90}
                   value={maxCommute}
-                  onChange={(event) => setMaxCommute(Number(event.target.value))}
+                  onChange={(event) =>
+                    setMaxCommute(Number(event.target.value))
+                  }
                   className="mt-1 h-10 w-full rounded-md border border-stone-300 bg-white px-3 text-sm outline-none ring-emerald-500 focus:ring-2"
                 />
               </label>
@@ -317,13 +352,33 @@ export default function App() {
             </div>
             {search ? (
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <Metric label="Leave" value={formatTime(search.preferredLeaveTimeMinutes)} />
-                <Metric label="Max drive" value={`${search.maxCommuteMinutes} min`} />
-                <Metric label="Buffer" value={`${search.dropoffBufferMinutes} min`} />
-                <Metric label="Shortlist" value={`${shortlistedCount} schools`} />
+                <Metric
+                  label="Leave"
+                  value={formatTime(search.preferredLeaveTimeMinutes)}
+                />
+                <Metric
+                  label="Max drive"
+                  value={`${search.maxCommuteMinutes} min`}
+                />
+                <Metric
+                  label="Buffer"
+                  value={`${search.dropoffBufferMinutes} min`}
+                />
+                <Metric
+                  label="Shortlist"
+                  value={`${shortlistedCount} schools`}
+                />
               </div>
             ) : null}
           </section>
+
+          <IntegrationPanel
+            status={integrationStatus}
+            runs={integrationRuns}
+            disabled={!searchId || busyLabel !== null}
+            onRefresh={() => void handleRefreshSources()}
+            onRescore={() => void handleRescore()}
+          />
 
           <Timeline events={timeline ?? []} />
         </section>
@@ -360,7 +415,10 @@ export default function App() {
 
             <div className="mt-4 grid gap-3">
               {rankedSchools === undefined ? (
-                <EmptyState title="Loading schools" body="Convex is preparing the live result set." />
+                <EmptyState
+                  title="Loading schools"
+                  body="Convex is preparing the live result set."
+                />
               ) : visibleSchools.length === 0 ? (
                 <EmptyState
                   title="No workable schools in view"
@@ -394,7 +452,9 @@ export default function App() {
                                   : "bg-rose-50 text-rose-900",
                               ].join(" ")}
                             >
-                              {row.commute?.workable ? "Morning works" : "Timing miss"}
+                              {row.commute?.workable
+                                ? "Morning works"
+                                : "Timing miss"}
                             </span>
                           </div>
                           <h3 className="mt-2 text-lg font-semibold">
@@ -433,7 +493,10 @@ export default function App() {
                           >
                             <div className="flex items-center justify-between gap-2">
                               <p className="text-sm font-semibold">
-                                {labelForFactor(availableFactors, score.factorKey)}
+                                {labelForFactor(
+                                  availableFactors,
+                                  score.factorKey,
+                                )}
                               </p>
                               <span className="text-sm font-semibold">
                                 {score.score.toFixed(1)}
@@ -462,7 +525,9 @@ export default function App() {
                               : "border-stone-300 hover:bg-stone-50",
                           ].join(" ")}
                         >
-                          {row.ranking.shortlisted ? "Shortlisted" : "Shortlist"}
+                          {row.ranking.shortlisted
+                            ? "Shortlisted"
+                            : "Shortlist"}
                         </button>
                         <button
                           type="button"
@@ -525,7 +590,10 @@ export default function App() {
 
             <div className="mt-4 grid gap-3">
               {applications === undefined ? (
-                <EmptyState title="Loading plan" body="Application actions will appear here." />
+                <EmptyState
+                  title="Loading plan"
+                  body="Application actions will appear here."
+                />
               ) : applications.length === 0 ? (
                 <EmptyState
                   title="No application plan yet"
@@ -539,7 +607,9 @@ export default function App() {
                   >
                     <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <h3 className="font-semibold">{row.application.title}</h3>
+                        <h3 className="font-semibold">
+                          {row.application.title}
+                        </h3>
                         <p className="text-sm text-stone-600">
                           {row.application.track === "public"
                             ? "One ranked-choice public application"
@@ -572,9 +642,11 @@ export default function App() {
                             <TodoButton
                               status={todo.status}
                               actionType={todo.actionType}
-                              onRun={() => void runTodoAction({ todoId: todo._id })}
+                              onRun={() =>
+                                void runTodoAction({ todoId: todo._id })
+                              }
                               onSend={() =>
-                                void sendDraftEmail({ todoId: todo._id })
+                                void sendTodoEmail({ todoId: todo._id })
                               }
                             />
                           </div>
@@ -651,6 +723,148 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   );
 }
 
+function IntegrationPanel({
+  status,
+  runs,
+  disabled,
+  onRefresh,
+  onRescore,
+}: {
+  status:
+    | {
+        firecrawlConfigured: boolean;
+        openaiConfigured: boolean;
+        openaiModel: string;
+        agentMailConfigured: boolean;
+        webhookPath: string;
+      }
+    | undefined;
+  runs:
+    | Array<{
+        _id: string;
+        provider: string;
+        operation: string;
+        mode: string;
+        status: string;
+        detail: string;
+        createdAt: number;
+      }>
+    | undefined;
+  disabled: boolean;
+  onRefresh: () => void;
+  onRescore: () => void;
+}) {
+  return (
+    <section className="rounded-md border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Integrations</h2>
+          <p className="text-sm text-stone-600">
+            Firecrawl, OpenAI, and AgentMail.
+          </p>
+        </div>
+        <span className="rounded-full bg-stone-100 px-2 py-1 text-xs font-semibold text-stone-600">
+          {status?.openaiModel ?? "Loading"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <IntegrationPill
+          label="Firecrawl"
+          configured={status?.firecrawlConfigured ?? false}
+        />
+        <IntegrationPill
+          label="OpenAI"
+          configured={status?.openaiConfigured ?? false}
+        />
+        <IntegrationPill
+          label="AgentMail"
+          configured={status?.agentMailConfigured ?? false}
+        />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRefresh}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-stone-300 px-3 text-sm font-medium hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-300"
+        >
+          <ReloadIcon />
+          Sources
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRescore}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-stone-950 px-3 text-sm font-semibold text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
+        >
+          <LightningBoltIcon />
+          Rescore
+        </button>
+      </div>
+
+      <div className="mt-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+          Webhook
+        </p>
+        <p className="mt-1 break-all text-sm font-medium text-stone-800">
+          {status?.webhookPath ?? "/api/agentmail/webhook"}
+        </p>
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {(runs ?? []).length === 0 ? (
+          <p className="text-sm text-stone-600">No provider runs yet.</p>
+        ) : (
+          (runs ?? []).slice(0, 3).map((run) => (
+            <div
+              key={run._id}
+              className="rounded-md border border-stone-200 bg-stone-50 p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold capitalize">
+                  {run.provider} {run.mode}
+                </p>
+                <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold uppercase text-stone-500">
+                  {run.status}
+                </span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-stone-600">
+                {run.detail}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function IntegrationPill({
+  label,
+  configured,
+}: {
+  label: string;
+  configured: boolean;
+}) {
+  return (
+    <div
+      className={[
+        "rounded-md border px-2 py-2 text-center",
+        configured
+          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+          : "border-amber-200 bg-amber-50 text-amber-900",
+      ].join(" ")}
+    >
+      <p className="truncate text-xs font-semibold">{label}</p>
+      <p className="mt-1 text-[11px] font-medium">
+        {configured ? "Live" : "Demo"}
+      </p>
+    </div>
+  );
+}
+
 function TodoButton({
   status,
   actionType,
@@ -667,6 +881,14 @@ function TodoButton({
       <span className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-50 px-3 text-sm font-semibold text-emerald-900">
         <CheckIcon />
         Done
+      </span>
+    );
+  }
+  if (status === "waiting_for_reply") {
+    return (
+      <span className="inline-flex h-9 items-center gap-2 rounded-md bg-sky-50 px-3 text-sm font-semibold text-sky-900">
+        <EnvelopeClosedIcon />
+        Waiting
       </span>
     );
   }
