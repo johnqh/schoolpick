@@ -12,7 +12,7 @@
 - **Auth:** none
 - **AI models:** `gpt-4o-mini` default through `OPENAI_MODEL`
 - **Started:** 2026-08-26T18:25:07Z
-- **Last updated:** 2026-08-27T01:15:43Z
+- **Last updated:** 2026-08-28T21:30:16Z
 
 ## Log
 
@@ -43,3 +43,7 @@ Added an AgentMail `message.received` webhook endpoint at `/api/agentmail/webhoo
 Updated the React app with an integrations panel showing provider configuration, recent provider runs, source refresh/rescore buttons, and a `waiting_for_reply` email state for live AgentMail sends (`src/App.tsx`). Documented optional Convex env vars and webhook secret setup in `README.md`.
 
 Verification: `npx convex dev --once`, `npm run lint`, `npm run build`, and Convex CLI smoke tests for demo search creation, Firecrawl/OpenAI fallback actions, application plan creation, email draft creation, and AgentMail fallback send all passed.
+
+### 2026-08-28 - ddd7c3b
+
+Added restart-safe project handoff documentation and a remaining-work todo checklist. `hackathon/HANDOFF.md` records the current repo state, resume commands, verification commands, optional provider env vars, AgentMail webhook setup, demo script, known constraints, and future-work rules. `hackathon/TODOS.md` tracks submission blockers, live integration tasks, product tasks, engineering tasks, and nice-to-have improvements. Linked both files from `README.md`.
