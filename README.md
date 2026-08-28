@@ -8,6 +8,8 @@ The product starts with an address, grade, preferred leaving time, max commute, 
 
 - Product spec: [hackathon/SPEC.md](hackathon/SPEC.md)
 - Implementation plan: [hackathon/PLAN.md](hackathon/PLAN.md)
+- Restart handoff: [hackathon/HANDOFF.md](hackathon/HANDOFF.md)
+- Remaining todos: [hackathon/TODOS.md](hackathon/TODOS.md)
 - Hackathon build log: [hackathon.md](hackathon.md)
 
 ## Local Setup
