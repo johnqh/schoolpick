@@ -9,7 +9,7 @@ import {
   ReloadIcon,
 } from "@radix-ui/react-icons";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 
@@ -32,7 +32,7 @@ const defaultWeights: Record<string, number> = {
   application_simplicity: 1,
 };
 
-export default function App() {
+function MainApp() {
   const factors = useQuery(api.schoolpick.listFactorDefinitions);
   const latestSearch = useQuery(api.schoolpick.latestSearch);
   const startSearch = useMutation(api.schoolpick.startSearch);
@@ -980,4 +980,21 @@ function labelForFactor(
   key: string,
 ) {
   return factors.find((factor) => factor.key === key)?.label ?? key;
+}
+
+function NotFoundPage() {
+  useEffect(() => {
+    if (window.location.pathname !== "/404")
+      window.history.replaceState(null, "", "/404");
+  }, []);
+  return (
+    <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <h1>404</h1>
+      <p>Page Not Found</p>
+      <a href="/">Go to Home</a>
+    </main>
+  );
+}
+export default function App() {
+  return window.location.pathname === "/" ? <MainApp /> : <NotFoundPage />;
 }
